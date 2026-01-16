@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { GoogleMap, Marker, Polygon, useJsApiLoader } from "@react-google-maps/api";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  GoogleMap,
+  Marker,
+  Polygon,
+  useJsApiLoader
+} from "@react-google-maps/api";
 
 const GOOGLE_API_KEY = "AIzaSyDPMF7fzNp0C0PJbwtSFQNf1icTv2ceO4c";
 const containerStyle = { width: "100%", height: "100vh" };
@@ -26,14 +31,12 @@ function getCenter(points) {
     lat += p.lat;
     lng += p.lng;
   });
-  return {
-    lat: lat / points.length,
-    lng: lng / points.length
-  };
+  return { lat: lat / points.length, lng: lng / points.length };
 }
 
 export default function RstJobsMap() {
   const { equipmentId } = useParams();
+  const navigate = useNavigate();
   const { isLoaded } = useJsApiLoader({ googleMapsApiKey: GOOGLE_API_KEY });
 
   const mapRef = useRef(null);
@@ -77,6 +80,10 @@ export default function RstJobsMap() {
     mapRef.current.fitBounds(bounds);
   };
 
+  const handleLogout = () => {
+    navigate("/");
+  };
+
   if (!isLoaded) return <div>Loading…</div>;
 
   const dropPoints = selectedJob
@@ -94,7 +101,6 @@ export default function RstJobsMap() {
 
   return (
     <div style={{ display: "flex" }}>
-      {/* LEFT JOB LIST */}
       <div
         style={{
           width: 320,
@@ -105,9 +111,33 @@ export default function RstJobsMap() {
           overflowY: "auto"
         }}
       >
-        <h3 style={{ position: "sticky", top: 0, background: "#111", paddingBottom: 8 }}>
-          {equipmentId} Jobs
-        </h3>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            position: "sticky",
+            top: 0,
+            background: "#111",
+            paddingBottom: 8,
+            zIndex: 10
+          }}
+        >
+          <h3>{equipmentId} Jobs</h3>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: "#dc2626",
+              color: "#fff",
+              border: "none",
+              padding: "6px 10px",
+              borderRadius: 4,
+              cursor: "pointer"
+            }}
+          >
+            Logout
+          </button>
+        </div>
 
         {jobs.map(job => (
           <div
@@ -130,7 +160,6 @@ export default function RstJobsMap() {
         ))}
       </div>
 
-      {/* MAP */}
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={mapCenter || fallbackCenter}

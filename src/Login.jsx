@@ -1,6 +1,24 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const EQUIPMENTS = [
+  "R-S1",
+  "R-S3",
+  "RH04",
+  "RH05",
+  "RH06",
+  "RH07",
+  "RH08",
+  "RH10",
+  "RH12",
+  "RH13",
+  "RTG9",
+  "RTG5",
+  "RTG6",
+  "RTG8",
+  "R-S2"
+];
+
 export default function Login() {
   const [equipmentId, setEquipmentId] = useState("");
   const [error, setError] = useState("");
@@ -22,10 +40,10 @@ export default function Login() {
       if (json?.equipment_location) {
         navigate(`/map/${equipmentId}`);
       } else {
-        setError("Invalid machine ID");
+        setError("Invalid equipment selected");
       }
     } catch {
-      setError("Unable to connect");
+      setError("Unable to connect to server");
     } finally {
       setLoading(false);
     }
@@ -46,28 +64,37 @@ export default function Login() {
           background: "#fff",
           padding: 30,
           borderRadius: 10,
-          width: 320,
-          textAlign: "center"
+          width: 360
         }}
       >
-        <h2>RST Login</h2>
+        <h2 style={{ marginBottom: 20 }}>Select Equipment</h2>
 
-        <input
-          placeholder="Enter Machine ID (R-S1)"
+        <label style={{ fontSize: 14, marginBottom: 6, display: "block" }}>
+          Equipment Name
+        </label>
+
+        <select
           value={equipmentId}
           onChange={e => setEquipmentId(e.target.value)}
           style={{
             width: "100%",
             padding: 10,
-            marginBottom: 12,
             borderRadius: 6,
-            border: "1px solid #ccc"
+            border: "1px solid #7c3aed",
+            marginBottom: 16
           }}
-        />
+        >
+          <option value="">Select Equipment</option>
+          {EQUIPMENTS.map(eq => (
+            <option key={eq} value={eq}>
+              {eq}
+            </option>
+          ))}
+        </select>
 
         <button
           onClick={handleLogin}
-          disabled={loading}
+          disabled={loading || !equipmentId}
           style={{
             width: "100%",
             padding: 10,
@@ -82,7 +109,7 @@ export default function Login() {
         </button>
 
         {error && (
-          <div style={{ color: "red", marginTop: 10 }}>{error}</div>
+          <div style={{ color: "red", marginTop: 12 }}>{error}</div>
         )}
       </div>
     </div>
