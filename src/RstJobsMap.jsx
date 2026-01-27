@@ -1,32 +1,35 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+
 import {
   GoogleMap,
   Marker,
   Polygon,
+  Polyline,
   useJsApiLoader
 } from "@react-google-maps/api";
 
+import yardLocations from "./data/yard_locations.json";
+import { yardGraph as rawYardGraph } from "./data/yardGraph";
+
+import {
+  findPathBetweenPositions,
+  haversineMeters
+} from "./utils/shortestPath";
+
 const GOOGLE_API_KEY = "AIzaSyDPMF7fzNp0C0PJbwtSFQNf1icTv2ceO4c";
+
 const containerStyle = { width: "100%", height: "100vh" };
 const fallbackCenter = { lat: 28.5120, lng: 77.2878 };
 
 const dropIcon = "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
 
-function parseLatLngString(value) {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map(p => {
-      const [lat, lng] = p.trim().split(/\s+/);
-      return { lat: parseFloat(lat), lng: parseFloat(lng) };
-    })
-    .filter(p => !isNaN(p.lat) && !isNaN(p.lng));
-}
-
+/* ============================
+    Helpers
+============================ */
 function getCenter(points) {
-  let lat = 0;
-  let lng = 0;
+  let lat = 0,
+    lng = 0;
   points.forEach(p => {
     lat += p.lat;
     lng += p.lng;
@@ -34,25 +37,81 @@ function getCenter(points) {
   return { lat: lat / points.length, lng: lng / points.length };
 }
 
+function makeSymmetricGraph(input) {
+  const g = {};
+  Object.keys(input).forEach(k => {
+    g[k] = {
+      lat: input[k].lat,
+      lng: input[k].lng,
+      neighbors: [...(input[k].neighbors || [])]
+    };
+  });
+
+  Object.keys(g).forEach(k => {
+    g[k].neighbors.forEach(n => {
+      if (g[n] && !g[n].neighbors.includes(k)) {
+        g[n].neighbors.push(k);
+      }
+    });
+  });
+
+  return g;
+}
+
+/* ============================
+    MAIN COMPONENT
+============================ */
 export default function RstJobsMap() {
   const { equipmentId } = useParams();
   const navigate = useNavigate();
-  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: GOOGLE_API_KEY });
+
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_API_KEY
+  });
 
   const mapRef = useRef(null);
+
   const [jobs, setJobs] = useState([]);
   const [rst, setRst] = useState(null);
-  const [selectedJob, setSelectedJob] = useState(null);
   const [mapCenter, setMapCenter] = useState(null);
 
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [selectedBox, setSelectedBox] = useState(null);
+
+  const [pathCoords, setPathCoords] = useState([]);
+  const [distance, setDistance] = useState(null);
+
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // ✅ Loader state
+  const [loadingJobs, setLoadingJobs] = useState(true);
+
+  // ✅ Fix: Map refresh
+  const [mapKey, setMapKey] = useState(0);
+
+  // ✅ FitBounds after refresh
+  const [targetBoxCenter, setTargetBoxCenter] = useState(null);
+
+  /* ✅ Graph */
+  const yardGraph = useMemo(
+    () => makeSymmetricGraph(rawYardGraph),
+    []
+  );
+
+  /* ============================
+      FETCH JOBS (warehouse_jobs)
+  ============================ */
   useEffect(() => {
     const load = async () => {
+      setLoadingJobs(true);
+
       const res = await fetch(
         `https://ctas.live/backend/api/get/rst/application/jobs/v2?equipment_id=${equipmentId}`
       );
+
       const json = await res.json();
 
-      setJobs(json.data || []);
+      setJobs(json.warehouse_jobs || []);
       setRst(json.equipment_location || null);
 
       if (json.equipment_location) {
@@ -61,46 +120,121 @@ export default function RstJobsMap() {
           lng: json.equipment_location.lng
         });
       }
+
+      setLoadingJobs(false);
     };
+
     load();
   }, [equipmentId]);
 
+  /* ============================
+      CLICK JOB
+  ============================ */
   const handleJobClick = job => {
+    setMapKey(prev => prev + 1);
+
     setSelectedJob(job);
-    if (!mapRef.current || !rst) return;
 
-    const points = parseLatLngString(job.drop_lat_long);
-    if (!points.length) return;
+    if (!rst) return;
 
-    const center = getCenter(points);
+    let stk = job.container_master?.last_stk_loc;
+    if (!stk) return;
 
-    const bounds = new window.google.maps.LatLngBounds();
-    bounds.extend({ lat: rst.lat, lng: rst.lng });
-    bounds.extend(center);
-    mapRef.current.fitBounds(bounds);
+    stk = stk.replace(/[A-Z]$/, "");
+
+    const matchedBox = yardLocations.find(loc => loc.name === stk);
+    if (!matchedBox) return;
+
+    setSelectedBox(matchedBox);
+
+    const boxPoints = [
+      matchedBox.latlng1,
+      matchedBox.latlng2,
+      matchedBox.latlng3,
+      matchedBox.latlng4
+    ];
+
+    const boxCenter = getCenter(boxPoints);
+
+    setTargetBoxCenter(boxCenter);
+
+    const coords = findPathBetweenPositions(
+      yardGraph,
+      { lat: rst.lat, lng: rst.lng },
+      boxCenter
+    );
+
+    setPathCoords(coords);
+
+    // ✅ Distance Calculation
+    let totalDist = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      totalDist += haversineMeters(coords[i], coords[i + 1]);
+    }
+
+    setDistance(totalDist);
   };
 
-  const handleLogout = () => {
-    navigate("/");
-  };
+  /* ============================
+      LOGOUT
+  ============================ */
+  const handleLogout = () => navigate("/");
 
-  if (!isLoaded) return <div>Loading…</div>;
+  /* ============================
+      Loaders
+  ============================ */
+  if (!isLoaded) return <div>Loading Google Map...</div>;
 
-  const dropPoints = selectedJob
-    ? parseLatLngString(selectedJob.drop_lat_long)
+  if (loadingJobs)
+    return (
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 20,
+          fontWeight: "bold"
+        }}
+      >
+        Loading Jobs & Equipment...
+      </div>
+    );
+
+  /* ============================
+      Search Filter
+  ============================ */
+  const filteredJobs = jobs.filter(job =>
+    job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  /* ============================
+      Box Points
+  ============================ */
+  const boxPoints = selectedBox
+    ? [
+        selectedBox.latlng1,
+        selectedBox.latlng2,
+        selectedBox.latlng3,
+        selectedBox.latlng4
+      ]
     : [];
 
-  const dropCenter =
-    dropPoints.length > 0 ? getCenter(dropPoints) : null;
+  const boxCenter =
+    boxPoints.length > 0 ? getCenter(boxPoints) : null;
 
+  /* ✅ Equipment Icon */
   const rstIcon = {
-    url: "/rst1.jpg",
-    scaledSize: { width: 40, height: 40 },
-    anchor: { x: 20, y: 20 }
+    url: "/logo.png",
+    scaledSize: { width: 40, height: 40 }
   };
 
+  /* ============================
+      UI
+  ============================ */
   return (
     <div style={{ display: "flex" }}>
+      {/* ================= Sidebar */}
       <div
         style={{
           width: 320,
@@ -111,35 +245,22 @@ export default function RstJobsMap() {
           overflowY: "auto"
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            position: "sticky",
-            top: 0,
-            background: "#111",
-            paddingBottom: 8,
-            zIndex: 10
-          }}
-        >
-          <h3>{equipmentId} Jobs</h3>
-          <button
-            onClick={handleLogout}
-            style={{
-              background: "#dc2626",
-              color: "#fff",
-              border: "none",
-              padding: "6px 10px",
-              borderRadius: 4,
-              cursor: "pointer"
-            }}
-          >
-            Logout
-          </button>
-        </div>
+        <h3>{equipmentId} Warehouse Jobs</h3>
 
-        {jobs.map(job => (
+        <input
+          placeholder="Search container..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{
+            width: "100%",
+            padding: 8,
+            borderRadius: 6,
+            border: "none",
+            marginBottom: 12
+          }}
+        />
+
+        {filteredJobs.map(job => (
           <div
             key={job.id}
             onClick={() => handleJobClick(job)}
@@ -152,46 +273,104 @@ export default function RstJobsMap() {
                 selectedJob?.id === job.id ? "#22c55e" : "#222"
             }}
           >
-            <div><b>Job #{job.id}</b></div>
+            <b>{job.container_no}</b>
             <div>Type: {job.job_type}</div>
-            <div>Container: {job.container_no}</div>
-            <div>Drop: {job.drop_to}</div>
+            <div>Stock: {job.container_master?.last_stk_loc}</div>
           </div>
         ))}
+
+        <button
+          onClick={handleLogout}
+          style={{
+            marginTop: 20,
+            width: "100%",
+            background: "#dc2626",
+            color: "white",
+            padding: 10,
+            borderRadius: 6,
+            border: "none"
+          }}
+        >
+          Logout
+        </button>
       </div>
 
-      <GoogleMap
-        mapContainerStyle={containerStyle}
-        center={mapCenter || fallbackCenter}
-        zoom={19}
-        mapTypeId="satellite"
-        onLoad={map => (mapRef.current = map)}
-      >
-        {rst && (
-          <Marker
-            position={{ lat: rst.lat, lng: rst.lng }}
-            icon={rstIcon}
-          />
-        )}
-
-        {dropPoints.length > 0 && (
-          <Polygon
-            paths={dropPoints}
-            options={{
-              fillColor: "rgba(255,0,0,0.35)",
-              strokeColor: "#ff0000",
-              strokeWeight: 2
+      {/* ================= MAP + DISTANCE OVERLAY */}
+      <div style={{ position: "relative", flex: 1 }}>
+        {/* ✅ Distance Overlay */}
+        {distance && (
+          <div
+            style={{
+              position: "absolute",
+              top: 15,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 100,
+              background: "rgba(0,0,0,0.75)",
+              color: "#00ff00",
+              padding: "10px 18px",
+              borderRadius: 10,
+              fontSize: 18,
+              fontWeight: "bold"
             }}
-          />
+          >
+            Remaining Distance: {distance.toFixed(1)} m
+          </div>
         )}
 
-        {dropCenter && (
-          <Marker
-            position={dropCenter}
-            icon={dropIcon}
-          />
-        )}
-      </GoogleMap>
+        {/* ✅ Google Map */}
+        <GoogleMap
+          key={mapKey}
+          mapContainerStyle={containerStyle}
+          center={mapCenter || fallbackCenter}
+          zoom={19}
+          mapTypeId="satellite"
+          onLoad={map => {
+            mapRef.current = map;
+
+            if (rst && targetBoxCenter) {
+              const bounds = new window.google.maps.LatLngBounds();
+              bounds.extend({ lat: rst.lat, lng: rst.lng });
+              bounds.extend(targetBoxCenter);
+              map.fitBounds(bounds);
+            }
+          }}
+        >
+          {/* Equipment Marker */}
+          {rst && (
+            <Marker position={rst} icon={rstIcon} />
+          )}
+
+          {/* Red Box */}
+          {boxPoints.length > 0 && (
+            <Polygon
+              paths={boxPoints}
+              options={{
+                fillColor: "rgba(255,0,0,0.45)",
+                strokeColor: "#ff0000",
+                strokeWeight: 2
+              }}
+            />
+          )}
+
+          {/* Box Marker */}
+          {boxCenter && (
+            <Marker position={boxCenter} icon={dropIcon} />
+          )}
+
+          {/* Path */}
+          {pathCoords.length > 0 && (
+            <Polyline
+              path={pathCoords}
+              options={{
+                strokeColor: "#00FF00",
+                strokeWeight: 5,
+                strokeOpacity: 0.9
+              }}
+            />
+          )}
+        </GoogleMap>
+      </div>
     </div>
   );
 }
