@@ -251,7 +251,11 @@ export default function RstJobsMap() {
         }}
       >
         <h3>{equipmentId} Warehouse Jobs</h3>
-
+ {distance && (
+          <div style={{ marginTop: 20,marginBottom:20, color: "#00ff00" }}>
+            ✅ Distance: {distance.toFixed(1)} meters
+          </div>
+        )}
         <input
           placeholder="Search container..."
           value={searchTerm}
@@ -284,11 +288,7 @@ export default function RstJobsMap() {
           </div>
         ))}
 
-        {distance && (
-          <div style={{ marginTop: 20, color: "#00ff00" }}>
-            ✅ Distance: {distance.toFixed(1)} meters
-          </div>
-        )}
+       
 
         <button
           onClick={handleLogout}
