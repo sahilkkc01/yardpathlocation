@@ -83,18 +83,14 @@ export default function RstJobsMap() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ Refresh Map Fix
   const [mapKey, setMapKey] = useState(0);
 
-  // ✅ FitBounds after refresh
   const [targetBoxCenter, setTargetBoxCenter] = useState(null);
 
-  /* ✅ Graph */
+
   const yardGraph = useMemo(() => makeSymmetricGraph(rawYardGraph), []);
 
-  /* ============================
-      FETCH JOBS ONCE
-  ============================ */
+
   useEffect(() => {
     const load = async () => {
       const res = await fetch(
@@ -117,9 +113,7 @@ export default function RstJobsMap() {
     load();
   }, [equipmentId]);
 
-  /* ============================
-      ✅ AUTO REFRESH RTG LOCATION EVERY 10 SEC
-  ============================ */
+
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -129,7 +123,7 @@ export default function RstJobsMap() {
 
         const json = await res.json();
 
-        // ✅ Update ONLY equipment location
+     
         if (json.equipment_location) {
           setRst(json.equipment_location);
         }
@@ -141,9 +135,7 @@ export default function RstJobsMap() {
     return () => clearInterval(interval);
   }, [equipmentId]);
 
-  /* ============================
-      ✅ DYNAMIC PATH UPDATE WHEN RTG MOVES
-  ============================ */
+
   useEffect(() => {
     if (!rst || !selectedBox) return;
 
@@ -156,17 +148,16 @@ export default function RstJobsMap() {
 
     const boxCenter = getCenter(boxPoints);
 
-    // ✅ Recalculate shortest path from updated RTG position
+   
     const coords = findPathBetweenPositions(
       yardGraph,
       { lat: rst.lat, lng: rst.lng },
       boxCenter
     );
 
-    setPathCoords(null);
     setPathCoords(coords);
 
-    // ✅ Update distance dynamically
+
     let totalDist = 0;
     for (let i = 0; i < coords.length - 1; i++) {
       totalDist += haversineMeters(coords[i], coords[i + 1]);
@@ -177,9 +168,7 @@ export default function RstJobsMap() {
     console.log("✅ Path updated. Remaining:", totalDist.toFixed(1), "m");
   }, [rst]); // ✅ Runs whenever RTG moves
 
-  /* ============================
-      CLICK JOB
-  ============================ */
+
   const handleJobClick = job => {
     setMapKey(prev => prev + 1);
     setSelectedJob(job);
@@ -233,23 +222,16 @@ export default function RstJobsMap() {
     setDistance(totalDist);
   };
 
-  /* ============================
-      LOGOUT
-  ============================ */
+
   const handleLogout = () => navigate("/");
 
   if (!isLoaded) return <div>Loading Map...</div>;
 
-  /* ============================
-      SEARCH FILTER
-  ============================ */
+
   const filteredJobs = jobs.filter(job =>
     job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  /* ============================
-      BOX POINTS
-  ============================ */
   const boxPoints = selectedBox
     ? [
         selectedBox.latlng1,
