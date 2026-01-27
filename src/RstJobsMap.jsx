@@ -83,13 +83,10 @@ export default function RstJobsMap() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ Loader state
-  const [loadingJobs, setLoadingJobs] = useState(true);
-
-  // ✅ Fix: Map refresh
+  // ✅ Fix 1: Force map refresh
   const [mapKey, setMapKey] = useState(0);
 
-  // ✅ FitBounds after refresh
+  // ✅ Fix 2: Save box center for fitBounds after refresh
   const [targetBoxCenter, setTargetBoxCenter] = useState(null);
 
   /* ✅ Graph */
@@ -103,25 +100,25 @@ export default function RstJobsMap() {
   ============================ */
   useEffect(() => {
     const load = async () => {
-      setLoadingJobs(true);
-
       const res = await fetch(
         `https://ctas.live/backend/api/get/rst/application/jobs/v2?equipment_id=${equipmentId}`
       );
 
       const json = await res.json();
 
+      // ✅ Only warehouse_jobs
       setJobs(json.warehouse_jobs || []);
+
+      // ✅ Equipment location
       setRst(json.equipment_location || null);
 
+      // ✅ Center map initially on equipment
       if (json.equipment_location) {
         setMapCenter({
           lat: json.equipment_location.lat,
           lng: json.equipment_location.lng
         });
       }
-
-      setLoadingJobs(false);
     };
 
     load();
@@ -131,22 +128,35 @@ export default function RstJobsMap() {
       CLICK JOB
   ============================ */
   const handleJobClick = job => {
+    // ✅ Refresh map each click (removes stuck first path)
     setMapKey(prev => prev + 1);
 
     setSelectedJob(job);
 
     if (!rst) return;
 
+    // ✅ last_stk_loc
     let stk = job.container_master?.last_stk_loc;
-    if (!stk) return;
 
+    if (!stk) {
+      alert("No last_stk_loc found!");
+      return;
+    }
+
+    // ✅ Remove last A/B/C
     stk = stk.replace(/[A-Z]$/, "");
 
+    // ✅ Find box in yard_locations.json
     const matchedBox = yardLocations.find(loc => loc.name === stk);
-    if (!matchedBox) return;
+
+    if (!matchedBox) {
+      alert("Box not found in yard_locations.json: " + stk);
+      return;
+    }
 
     setSelectedBox(matchedBox);
 
+    // ✅ Box polygon points
     const boxPoints = [
       matchedBox.latlng1,
       matchedBox.latlng2,
@@ -156,8 +166,10 @@ export default function RstJobsMap() {
 
     const boxCenter = getCenter(boxPoints);
 
+    // ✅ Save center for AFTER refresh zoom
     setTargetBoxCenter(boxCenter);
 
+    // ✅ Shortest Path Equipment → Box Center
     const coords = findPathBetweenPositions(
       yardGraph,
       { lat: rst.lat, lng: rst.lng },
@@ -166,7 +178,7 @@ export default function RstJobsMap() {
 
     setPathCoords(coords);
 
-    // ✅ Distance Calculation
+    // ✅ Distance
     let totalDist = 0;
     for (let i = 0; i < coords.length - 1; i++) {
       totalDist += haversineMeters(coords[i], coords[i + 1]);
@@ -180,36 +192,17 @@ export default function RstJobsMap() {
   ============================ */
   const handleLogout = () => navigate("/");
 
-  /* ============================
-      Loaders
-  ============================ */
-  if (!isLoaded) return <div>Loading Google Map...</div>;
-
-  if (loadingJobs)
-    return (
-      <div
-        style={{
-          height: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 20,
-          fontWeight: "bold"
-        }}
-      >
-        Loading Jobs & Equipment...
-      </div>
-    );
+  if (!isLoaded) return <div>Loading Map...</div>;
 
   /* ============================
-      Search Filter
+      SEARCH FILTER
   ============================ */
   const filteredJobs = jobs.filter(job =>
     job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   /* ============================
-      Box Points
+      BOX POINTS
   ============================ */
   const boxPoints = selectedBox
     ? [
@@ -226,7 +219,8 @@ export default function RstJobsMap() {
   /* ✅ Equipment Icon */
   const rstIcon = {
     url: "/logo.png",
-    scaledSize: { width: 40, height: 40 }
+    scaledSize: { width: 40, height: 40 },
+    anchor: { x: 20, y: 20 }
   };
 
   /* ============================
@@ -247,6 +241,7 @@ export default function RstJobsMap() {
       >
         <h3>{equipmentId} Warehouse Jobs</h3>
 
+        {/* Search */}
         <input
           placeholder="Search container..."
           value={searchTerm}
@@ -260,6 +255,7 @@ export default function RstJobsMap() {
           }}
         />
 
+        {/* Jobs List */}
         {filteredJobs.map(job => (
           <div
             key={job.id}
@@ -279,6 +275,14 @@ export default function RstJobsMap() {
           </div>
         ))}
 
+        {/* Distance */}
+        {distance && (
+          <div style={{ marginTop: 20, color: "#00ff00" }}>
+            ✅ Distance: {distance.toFixed(1)} meters
+          </div>
+        )}
+
+        {/* Logout */}
         <button
           onClick={handleLogout}
           style={{
@@ -295,82 +299,60 @@ export default function RstJobsMap() {
         </button>
       </div>
 
-      {/* ================= MAP + DISTANCE OVERLAY */}
-      <div style={{ position: "relative", flex: 1 }}>
-        {/* ✅ Distance Overlay */}
-        {distance && (
-          <div
-            style={{
-              position: "absolute",
-              top: 15,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 100,
-              background: "rgba(0,0,0,0.75)",
-              color: "#00ff00",
-              padding: "10px 18px",
-              borderRadius: 10,
-              fontSize: 18,
-              fontWeight: "bold"
-            }}
-          >
-            Remaining Distance: {distance.toFixed(1)} m
-          </div>
+      {/* ================= Map */}
+      <GoogleMap
+        key={mapKey} // ✅ FULL REFRESH FIX
+        mapContainerStyle={containerStyle}
+        center={mapCenter || fallbackCenter}
+        zoom={19}
+        mapTypeId="satellite"
+        onLoad={map => {
+          mapRef.current = map;
+
+          // ✅ AFTER refresh, show correct path portion
+          if (rst && targetBoxCenter) {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend({ lat: rst.lat, lng: rst.lng });
+            bounds.extend(targetBoxCenter);
+            map.fitBounds(bounds);
+          }
+        }}
+      >
+        {/* ✅ Equipment Marker */}
+        {rst && (
+          <Marker
+            position={{ lat: rst.lat, lng: rst.lng }}
+            icon={rstIcon}
+          />
         )}
 
-        {/* ✅ Google Map */}
-        <GoogleMap
-          key={mapKey}
-          mapContainerStyle={containerStyle}
-          center={mapCenter || fallbackCenter}
-          zoom={19}
-          mapTypeId="satellite"
-          onLoad={map => {
-            mapRef.current = map;
+        {/* ✅ Selected Box Polygon */}
+        {boxPoints.length > 0 && (
+          <Polygon
+            paths={boxPoints}
+            options={{
+              fillColor: "rgba(255,0,0,0.45)",
+              strokeColor: "#ff0000",
+              strokeWeight: 2
+            }}
+          />
+        )}
 
-            if (rst && targetBoxCenter) {
-              const bounds = new window.google.maps.LatLngBounds();
-              bounds.extend({ lat: rst.lat, lng: rst.lng });
-              bounds.extend(targetBoxCenter);
-              map.fitBounds(bounds);
-            }
-          }}
-        >
-          {/* Equipment Marker */}
-          {rst && (
-            <Marker position={rst} icon={rstIcon} />
-          )}
+        {/* ✅ Box Marker */}
+        {boxCenter && <Marker position={boxCenter} icon={dropIcon} />}
 
-          {/* Red Box */}
-          {boxPoints.length > 0 && (
-            <Polygon
-              paths={boxPoints}
-              options={{
-                fillColor: "rgba(255,0,0,0.45)",
-                strokeColor: "#ff0000",
-                strokeWeight: 2
-              }}
-            />
-          )}
-
-          {/* Box Marker */}
-          {boxCenter && (
-            <Marker position={boxCenter} icon={dropIcon} />
-          )}
-
-          {/* Path */}
-          {pathCoords.length > 0 && (
-            <Polyline
-              path={pathCoords}
-              options={{
-                strokeColor: "#00FF00",
-                strokeWeight: 5,
-                strokeOpacity: 0.9
-              }}
-            />
-          )}
-        </GoogleMap>
-      </div>
+        {/* ✅ Shortest Path */}
+        {pathCoords.length > 0 && (
+          <Polyline
+            path={pathCoords}
+            options={{
+              strokeColor: "#00FF00",
+              strokeWeight: 5,
+              strokeOpacity: 0.9
+            }}
+          />
+        )}
+      </GoogleMap>
     </div>
   );
 }
