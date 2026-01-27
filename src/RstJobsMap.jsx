@@ -83,20 +83,17 @@ export default function RstJobsMap() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ Fix 1: Force map refresh
+  // ✅ Refresh Map Fix
   const [mapKey, setMapKey] = useState(0);
 
-  // ✅ Fix 2: Save box center for fitBounds after refresh
+  // ✅ FitBounds after refresh
   const [targetBoxCenter, setTargetBoxCenter] = useState(null);
 
   /* ✅ Graph */
-  const yardGraph = useMemo(
-    () => makeSymmetricGraph(rawYardGraph),
-    []
-  );
+  const yardGraph = useMemo(() => makeSymmetricGraph(rawYardGraph), []);
 
   /* ============================
-      FETCH JOBS (warehouse_jobs)
+      FETCH JOBS ONCE
   ============================ */
   useEffect(() => {
     const load = async () => {
@@ -106,13 +103,13 @@ export default function RstJobsMap() {
 
       const json = await res.json();
 
-      // ✅ Only warehouse_jobs
+      // ✅ Jobs loaded once
       setJobs(json.warehouse_jobs || []);
 
-      // ✅ Equipment location
+      // ✅ Initial RTG location
       setRst(json.equipment_location || null);
 
-      // ✅ Center map initially on equipment
+      // ✅ Center map on RTG location
       if (json.equipment_location) {
         setMapCenter({
           lat: json.equipment_location.lat,
@@ -125,17 +122,38 @@ export default function RstJobsMap() {
   }, [equipmentId]);
 
   /* ============================
+      ✅ AUTO REFRESH RTG LOCATION EVERY 10 SEC
+  ============================ */
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `https://ctas.live/backend/api/get/rst/application/jobs/v2?equipment_id=${equipmentId}`
+        );
+
+        const json = await res.json();
+
+        // ✅ Update ONLY equipment location
+        if (json.equipment_location) {
+          setRst(json.equipment_location);
+        }
+      } catch (err) {
+        console.error("RTG Refresh Error:", err);
+      }
+    }, 10000); // ✅ 10 seconds
+
+    return () => clearInterval(interval);
+  }, [equipmentId]);
+
+  /* ============================
       CLICK JOB
   ============================ */
   const handleJobClick = job => {
-    // ✅ Refresh map each click (removes stuck first path)
     setMapKey(prev => prev + 1);
-
     setSelectedJob(job);
 
     if (!rst) return;
 
-    // ✅ last_stk_loc
     let stk = job.container_master?.last_stk_loc;
 
     if (!stk) {
@@ -143,20 +161,17 @@ export default function RstJobsMap() {
       return;
     }
 
-    // ✅ Remove last A/B/C
     stk = stk.replace(/[A-Z]$/, "");
 
-    // ✅ Find box in yard_locations.json
     const matchedBox = yardLocations.find(loc => loc.name === stk);
 
     if (!matchedBox) {
-      alert("Box not found in yard_locations.json: " + stk);
+      alert("Box not found: " + stk);
       return;
     }
 
     setSelectedBox(matchedBox);
 
-    // ✅ Box polygon points
     const boxPoints = [
       matchedBox.latlng1,
       matchedBox.latlng2,
@@ -166,10 +181,8 @@ export default function RstJobsMap() {
 
     const boxCenter = getCenter(boxPoints);
 
-    // ✅ Save center for AFTER refresh zoom
     setTargetBoxCenter(boxCenter);
 
-    // ✅ Shortest Path Equipment → Box Center
     const coords = findPathBetweenPositions(
       yardGraph,
       { lat: rst.lat, lng: rst.lng },
@@ -178,7 +191,6 @@ export default function RstJobsMap() {
 
     setPathCoords(coords);
 
-    // ✅ Distance
     let totalDist = 0;
     for (let i = 0; i < coords.length - 1; i++) {
       totalDist += haversineMeters(coords[i], coords[i + 1]);
@@ -213,8 +225,7 @@ export default function RstJobsMap() {
       ]
     : [];
 
-  const boxCenter =
-    boxPoints.length > 0 ? getCenter(boxPoints) : null;
+  const boxCenter = boxPoints.length > 0 ? getCenter(boxPoints) : null;
 
   /* ✅ Equipment Icon */
   const rstIcon = {
@@ -228,7 +239,7 @@ export default function RstJobsMap() {
   ============================ */
   return (
     <div style={{ display: "flex" }}>
-      {/* ================= Sidebar */}
+      {/* Sidebar */}
       <div
         style={{
           width: 320,
@@ -241,7 +252,6 @@ export default function RstJobsMap() {
       >
         <h3>{equipmentId} Warehouse Jobs</h3>
 
-        {/* Search */}
         <input
           placeholder="Search container..."
           value={searchTerm}
@@ -255,7 +265,6 @@ export default function RstJobsMap() {
           }}
         />
 
-        {/* Jobs List */}
         {filteredJobs.map(job => (
           <div
             key={job.id}
@@ -275,14 +284,12 @@ export default function RstJobsMap() {
           </div>
         ))}
 
-        {/* Distance */}
         {distance && (
           <div style={{ marginTop: 20, color: "#00ff00" }}>
             ✅ Distance: {distance.toFixed(1)} meters
           </div>
         )}
 
-        {/* Logout */}
         <button
           onClick={handleLogout}
           style={{
@@ -299,9 +306,9 @@ export default function RstJobsMap() {
         </button>
       </div>
 
-      {/* ================= Map */}
+      {/* Map */}
       <GoogleMap
-        key={mapKey} // ✅ FULL REFRESH FIX
+        key={mapKey}
         mapContainerStyle={containerStyle}
         center={mapCenter || fallbackCenter}
         zoom={19}
@@ -309,7 +316,6 @@ export default function RstJobsMap() {
         onLoad={map => {
           mapRef.current = map;
 
-          // ✅ AFTER refresh, show correct path portion
           if (rst && targetBoxCenter) {
             const bounds = new window.google.maps.LatLngBounds();
             bounds.extend({ lat: rst.lat, lng: rst.lng });
@@ -318,7 +324,7 @@ export default function RstJobsMap() {
           }
         }}
       >
-        {/* ✅ Equipment Marker */}
+        {/* ✅ RTG Marker Auto Updates */}
         {rst && (
           <Marker
             position={{ lat: rst.lat, lng: rst.lng }}
@@ -326,7 +332,7 @@ export default function RstJobsMap() {
           />
         )}
 
-        {/* ✅ Selected Box Polygon */}
+        {/* ✅ Selected Box */}
         {boxPoints.length > 0 && (
           <Polygon
             paths={boxPoints}
@@ -338,7 +344,7 @@ export default function RstJobsMap() {
           />
         )}
 
-        {/* ✅ Box Marker */}
+        {/* ✅ Box Center Marker */}
         {boxCenter && <Marker position={boxCenter} icon={dropIcon} />}
 
         {/* ✅ Shortest Path */}
