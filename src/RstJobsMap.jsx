@@ -25,7 +25,7 @@ const fallbackCenter = { lat: 28.5120, lng: 77.2878 };
 const dropIcon = "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
 
 /* ============================
-    Helpers
+    HELPERS
 ============================ */
 function getCenter(points) {
   let lat = 0,
@@ -78,7 +78,7 @@ export default function RstJobsMap() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [selectedBox, setSelectedBox] = useState(null);
 
-  const [pathCoords, setPathCoords] = useState([]);
+  const [pathCoords, setPathCoords] = useState([null]);
   const [distance, setDistance] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -103,13 +103,9 @@ export default function RstJobsMap() {
 
       const json = await res.json();
 
-      // ✅ Jobs loaded once
       setJobs(json.warehouse_jobs || []);
-
-      // ✅ Initial RTG location
       setRst(json.equipment_location || null);
 
-      // ✅ Center map on RTG location
       if (json.equipment_location) {
         setMapCenter({
           lat: json.equipment_location.lat,
@@ -140,10 +136,46 @@ export default function RstJobsMap() {
       } catch (err) {
         console.error("RTG Refresh Error:", err);
       }
-    }, 10000); // ✅ 10 seconds
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [equipmentId]);
+
+  /* ============================
+      ✅ DYNAMIC PATH UPDATE WHEN RTG MOVES
+  ============================ */
+  useEffect(() => {
+    if (!rst || !selectedBox) return;
+
+    const boxPoints = [
+      selectedBox.latlng1,
+      selectedBox.latlng2,
+      selectedBox.latlng3,
+      selectedBox.latlng4
+    ];
+
+    const boxCenter = getCenter(boxPoints);
+
+    // ✅ Recalculate shortest path from updated RTG position
+    const coords = findPathBetweenPositions(
+      yardGraph,
+      { lat: rst.lat, lng: rst.lng },
+      boxCenter
+    );
+
+    setPathCoords(null);
+    setPathCoords(coords);
+
+    // ✅ Update distance dynamically
+    let totalDist = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      totalDist += haversineMeters(coords[i], coords[i + 1]);
+    }
+
+    setDistance(totalDist);
+
+    console.log("✅ Path updated. Remaining:", totalDist.toFixed(1), "m");
+  }, [rst]); // ✅ Runs whenever RTG moves
 
   /* ============================
       CLICK JOB
@@ -183,6 +215,7 @@ export default function RstJobsMap() {
 
     setTargetBoxCenter(boxCenter);
 
+    // ✅ Initial shortest path draw
     const coords = findPathBetweenPositions(
       yardGraph,
       { lat: rst.lat, lng: rst.lng },
@@ -191,6 +224,7 @@ export default function RstJobsMap() {
 
     setPathCoords(coords);
 
+    // ✅ Distance calculation
     let totalDist = 0;
     for (let i = 0; i < coords.length - 1; i++) {
       totalDist += haversineMeters(coords[i], coords[i + 1]);
@@ -251,11 +285,13 @@ export default function RstJobsMap() {
         }}
       >
         <h3>{equipmentId} Warehouse Jobs</h3>
- {distance && (
-          <div style={{ marginTop: 20,marginBottom:20, color: "#00ff00" }}>
-            ✅ Distance: {distance.toFixed(1)} meters
+
+        {distance && (
+          <div style={{ marginTop: 20, marginBottom: 20, color: "#00ff00" }}>
+            ✅  Distance: {distance.toFixed(1)} meters
           </div>
         )}
+
         <input
           placeholder="Search container..."
           value={searchTerm}
@@ -287,8 +323,6 @@ export default function RstJobsMap() {
             <div>Stock: {job.container_master?.last_stk_loc}</div>
           </div>
         ))}
-
-       
 
         <button
           onClick={handleLogout}
@@ -347,7 +381,7 @@ export default function RstJobsMap() {
         {/* ✅ Box Center Marker */}
         {boxCenter && <Marker position={boxCenter} icon={dropIcon} />}
 
-        {/* ✅ Shortest Path */}
+        {/* ✅ Dynamic Shortest Path */}
         {pathCoords.length > 0 && (
           <Polyline
             path={pathCoords}
