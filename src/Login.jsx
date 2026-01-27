@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 const EQUIPMENTS = [
   "R-S1",
+  "R-S2",
   "R-S3",
   "RH04",
   "RH05",
