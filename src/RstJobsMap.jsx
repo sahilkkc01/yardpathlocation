@@ -135,7 +135,7 @@ export default function RstJobsMap() {
 
     load();
   }, [equipmentId]);
-// 
+
   /* ============================
       ✅ AUTO REFRESH RTG LOCATION ONLY
   ============================ */
