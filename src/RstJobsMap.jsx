@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import {
@@ -70,8 +70,6 @@ export default function RstJobsMap() {
     googleMapsApiKey: GOOGLE_API_KEY
   });
 
-  const mapRef = useRef(null);
-
   const [warehouseJobs, setWarehouseJobs] = useState([]);
   const [otherJobs, setOtherJobs] = useState([]);
 
@@ -86,9 +84,6 @@ export default function RstJobsMap() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("warehouse");
-
-  const [mapKey, setMapKey] = useState(0);
-  const [targetBoxCenter, setTargetBoxCenter] = useState(null);
 
   const yardGraph = useMemo(() => makeSymmetricGraph(rawYardGraph), []);
 
@@ -118,7 +113,6 @@ export default function RstJobsMap() {
     };
 
     fetchJobs();
-
     const interval = setInterval(fetchJobs, 30000);
 
     return () => clearInterval(interval);
@@ -155,7 +149,6 @@ export default function RstJobsMap() {
 
   const handleWarehouseClick = job => {
     setActiveTab("warehouse");
-    setMapKey(prev => prev + 1);
     setSelectedJob(job);
 
     if (!rst) return;
@@ -177,7 +170,7 @@ export default function RstJobsMap() {
       matchedBox.latlng4
     ]);
 
-    setTargetBoxCenter(boxCenter);
+    setMapCenter(boxCenter);
 
     const coords = findPathBetweenPositions(
       yardGraph,
@@ -192,14 +185,49 @@ export default function RstJobsMap() {
     setActiveTab("other");
     setSelectedJob(job);
 
-    const dropPoint = extractDropLatLng(job.drop_lat_long);
-    if (!dropPoint) return alert("Drop LatLong Missing!");
-
-    setMapCenter(dropPoint);
-
     setSelectedBox(null);
     setPathCoords([]);
     setDistance(null);
+
+    if (!rst) return;
+
+    if (job.job_type === "rake_out") {
+      let pickup = job.pickup_from;
+      if (!pickup) return alert("Pickup missing!");
+
+      pickup = pickup.replace(/[A-Z]$/, "");
+
+      const pickupBox = yardLocations.find(loc => loc.name === pickup);
+      if (!pickupBox) return alert("Pickup box not found: " + pickup);
+
+      const pickupCenter = getCenter([
+        pickupBox.latlng1,
+        pickupBox.latlng2,
+        pickupBox.latlng3,
+        pickupBox.latlng4
+      ]);
+
+      setMapCenter(pickupCenter);
+
+      setSelectedJob({
+        ...job,
+        drop_lat_long: `${pickupCenter.lat} ${pickupCenter.lng}`
+      });
+
+      const coords = findPathBetweenPositions(
+        yardGraph,
+        { lat: rst.lat, lng: rst.lng },
+        pickupCenter
+      );
+
+      setPathCoords(coords);
+      return;
+    }
+
+    const dropPoint = extractDropLatLng(job.drop_lat_long);
+    if (!dropPoint) return alert("Drop LatLong missing!");
+
+    setMapCenter(dropPoint);
   };
 
   if (!isLoaded) return <div>Loading Map...</div>;
@@ -296,23 +324,24 @@ export default function RstJobsMap() {
         />
 
         {activeTab === "warehouse" &&
-          filteredWarehouse.map(job => (
-            <div
-              key={job.id}
-              onClick={() => handleWarehouseClick(job)}
-              style={{
-                padding: 10,
-                marginBottom: 8,
-                borderRadius: 6,
-                cursor: "pointer",
-                background: selectedJob?.id === job.id ? "#22c55e" : "#222"
-              }}
-            >
-              <b>{job.container_no}</b>
-              <div>{job.job_type}</div>
-              <div>{job.container_master?.last_stk_loc}</div>
-            </div>
-          ))}
+  filteredWarehouse.map(job => (
+    <div
+      key={job.id}
+      onClick={() => handleWarehouseClick(job)}
+      style={{
+        padding: 10,
+        marginBottom: 8,
+        borderRadius: 6,
+        cursor: "pointer",
+        background: selectedJob?.id === job.id ? "#22c55e" : "#222"
+      }}
+    >
+      <b>{job.container_no}</b>
+      <div>Type: {job.job_type}</div>
+      <div>Stock: {job.container_master?.last_stk_loc}</div>
+    </div>
+  ))}
+
 
         {activeTab === "other" &&
           filteredOther.map(job => (
@@ -329,7 +358,9 @@ export default function RstJobsMap() {
             >
               <b>{job.container_no}</b>
               <div>{job.job_type}</div>
-              <div>{job.drop_to}</div>
+              {job.job_type === "rake_out" && (
+                <div>Pickup: {job.pickup_from}</div>
+              )}
             </div>
           ))}
 
@@ -350,21 +381,10 @@ export default function RstJobsMap() {
       </div>
 
       <GoogleMap
-        key={mapKey}
         mapContainerStyle={containerStyle}
         center={mapCenter || fallbackCenter}
         zoom={19}
         mapTypeId="satellite"
-        onLoad={map => {
-          mapRef.current = map;
-
-          if (rst && targetBoxCenter && activeTab === "warehouse") {
-            const bounds = new window.google.maps.LatLngBounds();
-            bounds.extend({ lat: rst.lat, lng: rst.lng });
-            bounds.extend(targetBoxCenter);
-            map.fitBounds(bounds);
-          }
-        }}
       >
         {rst && <Marker position={rst} icon={rstIcon} />}
 
@@ -376,8 +396,8 @@ export default function RstJobsMap() {
           <Marker position={boxCenter} icon={dropIcon} />
         )}
 
-        {activeTab === "warehouse" && pathCoords.length > 0 && (
-           <Polyline
+        {pathCoords.length > 0 && (
+          <Polyline
             path={pathCoords}
             options={{
               strokeColor: "#00FF00",
@@ -387,7 +407,7 @@ export default function RstJobsMap() {
           />
         )}
 
-        {activeTab === "other" && otherDropPoint && (
+        {otherDropPoint && (
           <Marker position={otherDropPoint} icon={otherJobIcon} />
         )}
       </GoogleMap>
