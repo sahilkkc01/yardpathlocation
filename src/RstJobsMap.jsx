@@ -165,34 +165,36 @@ export default function RstJobsMap() {
   /* ============================
       ✅ DYNAMIC PATH UPDATE ONLY FOR WAREHOUSE JOBS
   ============================ */
-  useEffect(() => {
-    if (!rst || !selectedBox) return;
-    if (activeTab !== "warehouse") return;
+useEffect(() => {
+  if (!rst || !selectedBox) return;
+  if (activeTab !== "warehouse") return;
 
-    const boxPoints = [
-      selectedBox.latlng1,
-      selectedBox.latlng2,
-      selectedBox.latlng3,
-      selectedBox.latlng4
-    ];
+  const boxPoints = [
+    selectedBox.latlng1,
+    selectedBox.latlng2,
+    selectedBox.latlng3,
+    selectedBox.latlng4
+  ];
 
-    const boxCenter = getCenter(boxPoints);
+  const boxCenter = getCenter(boxPoints);
 
-    const coords = findPathBetweenPositions(
-      yardGraph,
-      { lat: rst.lat, lng: rst.lng },
-      boxCenter
-    );
+  const coords = findPathBetweenPositions(
+    yardGraph,
+    { lat: rst.lat, lng: rst.lng },
+    boxCenter
+  );
 
-    setPathCoords(coords);
+  setPathCoords(coords);
 
-    let totalDist = 0;
-    for (let i = 0; i < coords.length - 1; i++) {
-      totalDist += haversineMeters(coords[i], coords[i + 1]);
-    }
+  let totalDist = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    totalDist += haversineMeters(coords[i], coords[i + 1]);
+  }
 
-    setDistance(totalDist);
-  }, [rst]);
+  setDistance(totalDist);
+
+}, [rst, selectedBox, activeTab, yardGraph]);
+
 
   /* ============================
       CLICK WAREHOUSE JOB
