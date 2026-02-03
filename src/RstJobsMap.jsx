@@ -338,31 +338,37 @@ export default function RstJobsMap() {
     >
       <b>{job.container_no}</b>
       <div>Type: {job.job_type}</div>
-      <div>Stock: {job.container_master?.last_stk_loc}</div>
+      <div> {job.container_master?.last_stk_loc}</div>
     </div>
   ))}
 
 
-        {activeTab === "other" &&
-          filteredOther.map(job => (
-            <div
-              key={job.id}
-              onClick={() => handleOtherJobClick(job)}
-              style={{
-                padding: 10,
-                marginBottom: 8,
-                borderRadius: 6,
-                cursor: "pointer",
-                background: selectedJob?.id === job.id ? "#3b82f6" : "#222"
-              }}
-            >
-              <b>{job.container_no}</b>
-              <div>{job.job_type}</div>
-              {job.job_type === "rake_out" && (
-                <div>Pickup: {job.pickup_from}</div>
-              )}
-            </div>
-          ))}
+      {activeTab === "other" &&
+  filteredOther.map(job => (
+    <div
+      key={job.id}
+      onClick={() => handleOtherJobClick(job)}
+      style={{
+        padding: 10,
+        marginBottom: 8,
+        borderRadius: 6,
+        cursor: "pointer",
+        background: selectedJob?.id === job.id ? "#3b82f6" : "#222"
+      }}
+    >
+      <b>{job.container_no}</b>
+
+      <div>Type: {job.job_type}</div>
+
+      {/* ✅ rake_out → Pickup Location */}
+      {job.job_type === "rake_out" ? (
+        <div>Pickup: {job.pickup_from}</div>
+      ) : (
+        <div>Drop: {job.drop_to}</div>
+      )}
+    </div>
+  ))}
+
 
         <button
           onClick={() => navigate("/")}
