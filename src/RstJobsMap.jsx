@@ -87,6 +87,7 @@ export default function RstJobsMap() {
 
   const yardGraph = useMemo(() => makeSymmetricGraph(rawYardGraph), []);
 
+  // ✅ Fetch Jobs
   useEffect(() => {
     const fetchJobs = async () => {
       try {
@@ -118,35 +119,58 @@ export default function RstJobsMap() {
     return () => clearInterval(interval);
   }, [equipmentId]);
 
-  useEffect(() => {
-    if (!rst || !selectedBox) return;
-    if (activeTab !== "warehouse") return;
+  // ✅ Auto Sort Warehouse Jobs Distance Wise
+  const filteredWarehouse = useMemo(() => {
+    if (!rst) return [];
 
-    const boxPoints = [
-      selectedBox.latlng1,
-      selectedBox.latlng2,
-      selectedBox.latlng3,
-      selectedBox.latlng4
-    ];
+    return warehouseJobs
+      .map(job => {
+        let stk = job.container_master?.last_stk_loc;
+        if (!stk) return null;
 
-    const boxCenter = getCenter(boxPoints);
+        stk = stk.replace(/[A-Z]$/, "");
 
-    const coords = findPathBetweenPositions(
-      yardGraph,
-      { lat: rst.lat, lng: rst.lng },
-      boxCenter
-    );
+        const matchedBox = yardLocations.find(loc => loc.name === stk);
+        if (!matchedBox) return null;
 
-    setPathCoords(coords);
+        const boxCenter = getCenter([
+          matchedBox.latlng1,
+          matchedBox.latlng2,
+          matchedBox.latlng3,
+          matchedBox.latlng4
+        ]);
 
-    let totalDist = 0;
-    for (let i = 0; i < coords.length - 1; i++) {
-      totalDist += haversineMeters(coords[i], coords[i + 1]);
-    }
+        // ✅ Find shortest path
+        const coords = findPathBetweenPositions(
+          yardGraph,
+          { lat: rst.lat, lng: rst.lng },
+          boxCenter
+        );
 
-    setDistance(totalDist);
-  }, [rst, selectedBox, activeTab, yardGraph]);
+        let totalDist = 0;
+        for (let i = 0; i < coords.length - 1; i++) {
+          totalDist += haversineMeters(coords[i], coords[i + 1]);
+        }
 
+        return {
+          ...job,
+          distance: totalDist,
+          boxCenter
+        };
+      })
+      .filter(Boolean)
+      .filter(job =>
+        job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => a.distance - b.distance); // ✅ Nearest first
+  }, [warehouseJobs, searchTerm, rst, yardGraph]);
+
+  // ✅ Other Jobs Filter
+  const filteredOther = otherJobs.filter(job =>
+    job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // ✅ Warehouse Click
   const handleWarehouseClick = job => {
     setActiveTab("warehouse");
     setSelectedJob(job);
@@ -179,8 +203,16 @@ export default function RstJobsMap() {
     );
 
     setPathCoords(coords);
+
+    let totalDist = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      totalDist += haversineMeters(coords[i], coords[i + 1]);
+    }
+
+    setDistance(totalDist);
   };
 
+  // ✅ Other Job Click
   const handleOtherJobClick = job => {
     setActiveTab("other");
     setSelectedJob(job);
@@ -232,13 +264,11 @@ export default function RstJobsMap() {
 
   if (!isLoaded) return <div>Loading Map...</div>;
 
-  const filteredWarehouse = warehouseJobs.filter(job =>
-    job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredOther = otherJobs.filter(job =>
-    job.container_no?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const rstIcon = {
+    url: "/logo.png",
+    scaledSize: { width: 40, height: 40 },
+    anchor: { x: 20, y: 20 }
+  };
 
   const boxPoints = selectedBox
     ? [
@@ -251,12 +281,6 @@ export default function RstJobsMap() {
 
   const boxCenter = boxPoints.length > 0 ? getCenter(boxPoints) : null;
 
-  const rstIcon = {
-    url: "/logo.png",
-    scaledSize: { width: 40, height: 40 },
-    anchor: { x: 20, y: 20 }
-  };
-
   const otherDropPoint =
     activeTab === "other"
       ? extractDropLatLng(selectedJob?.drop_lat_long)
@@ -264,6 +288,7 @@ export default function RstJobsMap() {
 
   return (
     <div style={{ display: "flex" }}>
+      {/* ✅ Sidebar */}
       <div
         style={{
           width: 350,
@@ -276,6 +301,7 @@ export default function RstJobsMap() {
       >
         <h3>{equipmentId} Jobs</h3>
 
+        {/* ✅ Tabs */}
         <div style={{ display: "flex", marginBottom: 15 }}>
           <button
             onClick={() => setActiveTab("warehouse")}
@@ -304,12 +330,7 @@ export default function RstJobsMap() {
           </button>
         </div>
 
-        {activeTab === "warehouse" && distance && (
-          <div style={{ marginBottom: 15, color: "#00ff00" }}>
-            Distance: {distance.toFixed(1)} m
-          </div>
-        )}
-
+        {/* ✅ Search */}
         <input
           placeholder="Search container..."
           value={searchTerm}
@@ -323,53 +344,57 @@ export default function RstJobsMap() {
           }}
         />
 
+        {/* ✅ Warehouse Sorted List */}
         {activeTab === "warehouse" &&
-  filteredWarehouse.map(job => (
-    <div
-      key={job.id}
-      onClick={() => handleWarehouseClick(job)}
-      style={{
-        padding: 10,
-        marginBottom: 8,
-        borderRadius: 6,
-        cursor: "pointer",
-        background: selectedJob?.id === job.id ? "#22c55e" : "#222"
-      }}
-    >
-      <b>{job.container_no}</b>
-      <div>Type: {job.job_type}</div>
-      <div> {job.container_master?.last_stk_loc}</div>
-    </div>
-  ))}
+          filteredWarehouse.map(job => (
+            <div
+              key={job.id}
+              onClick={() => handleWarehouseClick(job)}
+              style={{
+                padding: 10,
+                marginBottom: 8,
+                borderRadius: 6,
+                cursor: "pointer",
+                background: selectedJob?.id === job.id ? "#22c55e" : "#222"
+              }}
+            >
+              <b>{job.container_no}</b>
+              <div>Type: {job.job_type}</div>
+              <div>Loc: {job.container_master?.last_stk_loc}</div>
 
+              {/* ✅ Distance Display */}
+              <div style={{ color: "#00ff00", marginTop: 4 }}>
+                Distance: {job.distance.toFixed(1)} m
+              </div>
+            </div>
+          ))}
 
-      {activeTab === "other" &&
-  filteredOther.map(job => (
-    <div
-      key={job.id}
-      onClick={() => handleOtherJobClick(job)}
-      style={{
-        padding: 10,
-        marginBottom: 8,
-        borderRadius: 6,
-        cursor: "pointer",
-        background: selectedJob?.id === job.id ? "#3b82f6" : "#222"
-      }}
-    >
-      <b>{job.container_no}</b>
+        {/* ✅ Other Jobs List */}
+        {activeTab === "other" &&
+          filteredOther.map(job => (
+            <div
+              key={job.id}
+              onClick={() => handleOtherJobClick(job)}
+              style={{
+                padding: 10,
+                marginBottom: 8,
+                borderRadius: 6,
+                cursor: "pointer",
+                background: selectedJob?.id === job.id ? "#3b82f6" : "#222"
+              }}
+            >
+              <b>{job.container_no}</b>
+              <div>Type: {job.job_type}</div>
 
-      <div>Type: {job.job_type}</div>
+              {job.job_type === "rake_out" ? (
+                <div>Pickup: {job.pickup_from}</div>
+              ) : (
+                <div>Drop: {job.drop_to}</div>
+              )}
+            </div>
+          ))}
 
-      {/* ✅ rake_out → Pickup Location */}
-      {job.job_type === "rake_out" ? (
-        <div>Pickup: {job.pickup_from}</div>
-      ) : (
-        <div>Drop: {job.drop_to}</div>
-      )}
-    </div>
-  ))}
-
-
+        {/* ✅ Logout */}
         <button
           onClick={() => navigate("/")}
           style={{
@@ -386,22 +411,27 @@ export default function RstJobsMap() {
         </button>
       </div>
 
+      {/* ✅ Google Map */}
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={mapCenter || fallbackCenter}
         zoom={19}
         mapTypeId="satellite"
       >
+        {/* ✅ RST Marker */}
         {rst && <Marker position={rst} icon={rstIcon} />}
 
+        {/* ✅ Warehouse Box Polygon */}
         {activeTab === "warehouse" && boxPoints.length > 0 && (
           <Polygon paths={boxPoints} />
         )}
 
+        {/* ✅ Box Center Marker */}
         {activeTab === "warehouse" && boxCenter && (
           <Marker position={boxCenter} icon={dropIcon} />
         )}
 
+        {/* ✅ Path Line */}
         {pathCoords.length > 0 && (
           <Polyline
             path={pathCoords}
@@ -413,6 +443,7 @@ export default function RstJobsMap() {
           />
         )}
 
+        {/* ✅ Other Drop Marker */}
         {otherDropPoint && (
           <Marker position={otherDropPoint} icon={otherJobIcon} />
         )}
