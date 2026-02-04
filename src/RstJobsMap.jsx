@@ -329,6 +329,12 @@ export default function RstJobsMap() {
             Other
           </button>
         </div>
+{/* ✅ Selected Job Distance Display */}
+{activeTab === "warehouse" && distance && (
+  <div style={{ marginBottom: 12, color: "#00ff00" }}>
+    Selected Distance: {distance.toFixed(1)} m
+  </div>
+)}
 
         {/* ✅ Search */}
         <input
