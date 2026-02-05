@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useRef } from "react";
+
 
 import {
   GoogleMap,
@@ -86,6 +88,9 @@ export default function RstJobsMap() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("warehouse");
+
+  const mapRef = useRef(null);
+
 
   const yardGraph = useMemo(() => makeSymmetricGraph(rawYardGraph), []);
 
@@ -216,6 +221,8 @@ export default function RstJobsMap() {
     ]);
 
     setMapCenter(boxCenter);
+    fitToPoints([rst, boxCenter]);
+
 
     const coords = findPathBetweenPositions(
       yardGraph,
@@ -259,6 +266,7 @@ export default function RstJobsMap() {
       setMapCenter(pickupCenter);
 setOtherPoint(pickupCenter);
 
+
 const coords = findPathBetweenPositions(
   yardGraph,
   { lat: rst.lat, lng: rst.lng },
@@ -277,6 +285,8 @@ return;
     if (!dropPoint) return;
 
    setMapCenter(dropPoint);
+   fitToPoints([rst, dropPoint]);
+
 setOtherPoint(dropPoint);
 
   };
@@ -301,6 +311,14 @@ setOtherPoint(dropPoint);
   const boxCenter = boxPoints.length > 0 ? getCenter(boxPoints) : null;
 
 const otherDropPoint = activeTab === "other" ? otherPoint : null;
+
+const fitToPoints = points => {
+  if (!mapRef.current || points.length === 0) return;
+
+  const bounds = new window.google.maps.LatLngBounds();
+  points.forEach(p => bounds.extend(p));
+  mapRef.current.fitBounds(bounds);
+};
 
 
   return (
@@ -430,12 +448,14 @@ const otherDropPoint = activeTab === "other" ? otherPoint : null;
         </button>
       </div>
 
-      <GoogleMap
-        mapContainerStyle={containerStyle}
-        center={mapCenter || fallbackCenter}
-        zoom={19}
-        mapTypeId="satellite"
-      >
+     <GoogleMap
+  mapContainerStyle={containerStyle}
+  center={mapCenter || fallbackCenter}
+  zoom={19}
+  mapTypeId="satellite"
+  onLoad={map => (mapRef.current = map)}
+>
+
         {rst && <Marker position={rst} icon={rstIcon} />}
 
         {activeTab === "warehouse" && boxPoints.length > 0 && (
