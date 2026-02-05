@@ -72,6 +72,8 @@ export default function RstJobsMap() {
 
   const [warehouseJobs, setWarehouseJobs] = useState([]);
   const [otherJobs, setOtherJobs] = useState([]);
+  const [otherPoint, setOtherPoint] = useState(null);
+
 
   const [rst, setRst] = useState(null);
   const [mapCenter, setMapCenter] = useState(null);
@@ -231,12 +233,12 @@ export default function RstJobsMap() {
     setDistance(totalDist);
   };
 
+  // 🔴 ONLY CHANGE IS HERE
   const handleOtherJobClick = job => {
     setActiveTab("other");
     setSelectedJob(job);
 
     setSelectedBox(null);
-    setPathCoords([]);
     setDistance(job.distance);
 
     if (job.job_type === "rake_out") {
@@ -255,13 +257,28 @@ export default function RstJobsMap() {
       ]);
 
       setMapCenter(pickupCenter);
-      return;
+setOtherPoint(pickupCenter);
+
+const coords = findPathBetweenPositions(
+  yardGraph,
+  { lat: rst.lat, lng: rst.lng },
+  pickupCenter
+);
+
+setPathCoords(coords);
+return;
+
     }
+
+    // ❌ no path for non-rake_out
+    setPathCoords([]);
 
     const dropPoint = extractDropLatLng(job.drop_lat_long);
     if (!dropPoint) return;
 
-    setMapCenter(dropPoint);
+   setMapCenter(dropPoint);
+setOtherPoint(dropPoint);
+
   };
 
   if (!isLoaded) return <div>Loading Map...</div>;
@@ -283,10 +300,8 @@ export default function RstJobsMap() {
 
   const boxCenter = boxPoints.length > 0 ? getCenter(boxPoints) : null;
 
-  const otherDropPoint =
-    activeTab === "other"
-      ? extractDropLatLng(selectedJob?.drop_lat_long)
-      : null;
+const otherDropPoint = activeTab === "other" ? otherPoint : null;
+
 
   return (
     <div style={{ display: "flex" }}>
@@ -432,15 +447,22 @@ export default function RstJobsMap() {
         )}
 
         {activeTab === "warehouse" && pathCoords.length > 0 && (
-          <Polyline
-            path={pathCoords}
-            options={{
+          <Polyline path={pathCoords} 
+           options={{
               strokeColor: "#00FF00",
               strokeWeight: 5,
               strokeOpacity: 0.9
-            }}
-          />
+            }}/>
         )}
+
+        {activeTab === "other" &&
+          selectedJob?.job_type === "rake_out" &&
+          pathCoords.length > 0 && <Polyline path={pathCoords} 
+           options={{
+              strokeColor: "#00FF00",
+              strokeWeight: 5,
+              strokeOpacity: 0.9
+            }} />}
 
         {otherDropPoint && (
           <Marker position={otherDropPoint} icon={otherJobIcon} />
