@@ -23,7 +23,7 @@ const containerStyle = { width: "100%", height: "100vh" };
 const fallbackCenter = { lat: 28.512, lng: 77.2878 };
 
 const dropIcon = "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
-const otherJobIcon = "http://maps.google.com/mapfiles/ms/icons/blue-dot.png";
+const otherJobIcon = "hhttp://maps.google.com/mapfiles/ms/icons/red-dot.png";
 
 function getCenter(points) {
   let lat = 0,
