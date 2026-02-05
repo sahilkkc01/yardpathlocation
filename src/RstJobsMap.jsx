@@ -200,9 +200,26 @@ export default function RstJobsMap() {
       .sort((a, b) => a.distance - b.distance);
   }, [otherJobs, searchTerm, rst, yardGraph]);
 
+  // Helper function to fit map to show both points
+  const fitToPoints = points => {
+    if (!mapRef.current || points.length === 0) return;
+
+    const bounds = new window.google.maps.LatLngBounds();
+    points.forEach(p => bounds.extend(p));
+    
+    // Add padding so markers aren't right at the edge
+    mapRef.current.fitBounds(bounds, {
+      top: 50,
+      right: 50,
+      bottom: 50,
+      left: 50
+    });
+  };
+
   const handleWarehouseClick = job => {
     setActiveTab("warehouse");
     setSelectedJob(job);
+    setOtherPoint(null);
 
     let stk = job.container_master?.last_stk_loc;
     if (!stk) return;
@@ -220,9 +237,10 @@ export default function RstJobsMap() {
       matchedBox.latlng4
     ]);
 
-    setMapCenter(boxCenter);
-    fitToPoints([rst, boxCenter]);
-
+    // Fit map to show both RST and target point
+    setTimeout(() => {
+      fitToPoints([rst, boxCenter]);
+    }, 100);
 
     const coords = findPathBetweenPositions(
       yardGraph,
@@ -240,11 +258,9 @@ export default function RstJobsMap() {
     setDistance(totalDist);
   };
 
-  // 🔴 ONLY CHANGE IS HERE
   const handleOtherJobClick = job => {
     setActiveTab("other");
     setSelectedJob(job);
-
     setSelectedBox(null);
     setDistance(job.distance);
 
@@ -263,32 +279,35 @@ export default function RstJobsMap() {
         pickupBox.latlng4
       ]);
 
-      setMapCenter(pickupCenter);
-setOtherPoint(pickupCenter);
+      setOtherPoint(pickupCenter);
 
+      // Fit map to show both RST and pickup point
+      setTimeout(() => {
+        fitToPoints([rst, pickupCenter]);
+      }, 100);
 
-const coords = findPathBetweenPositions(
-  yardGraph,
-  { lat: rst.lat, lng: rst.lng },
-  pickupCenter
-);
+      const coords = findPathBetweenPositions(
+        yardGraph,
+        { lat: rst.lat, lng: rst.lng },
+        pickupCenter
+      );
 
-setPathCoords(coords);
-return;
-
+      setPathCoords(coords);
+      return;
     }
 
-    // ❌ no path for non-rake_out
+    // For non-rake_out jobs
     setPathCoords([]);
 
     const dropPoint = extractDropLatLng(job.drop_lat_long);
     if (!dropPoint) return;
 
-   setMapCenter(dropPoint);
-   fitToPoints([rst, dropPoint]);
+    setOtherPoint(dropPoint);
 
-setOtherPoint(dropPoint);
-
+    // Fit map to show both RST and drop point
+    setTimeout(() => {
+      fitToPoints([rst, dropPoint]);
+    }, 100);
   };
 
   if (!isLoaded) return <div>Loading Map...</div>;
@@ -310,16 +329,7 @@ setOtherPoint(dropPoint);
 
   const boxCenter = boxPoints.length > 0 ? getCenter(boxPoints) : null;
 
-const otherDropPoint = activeTab === "other" ? otherPoint : null;
-
-const fitToPoints = points => {
-  if (!mapRef.current || points.length === 0) return;
-
-  const bounds = new window.google.maps.LatLngBounds();
-  points.forEach(p => bounds.extend(p));
-  mapRef.current.fitBounds(bounds);
-};
-
+  const otherDropPoint = activeTab === "other" ? otherPoint : null;
 
   return (
     <div style={{ display: "flex" }}>
@@ -448,13 +458,13 @@ const fitToPoints = points => {
         </button>
       </div>
 
-     <GoogleMap
-  mapContainerStyle={containerStyle}
-  center={mapCenter || fallbackCenter}
-  zoom={19}
-  mapTypeId="satellite"
-  onLoad={map => (mapRef.current = map)}
->
+      <GoogleMap
+        mapContainerStyle={containerStyle}
+        center={mapCenter || fallbackCenter}
+        zoom={19}
+        mapTypeId="satellite"
+        onLoad={map => (mapRef.current = map)}
+      >
 
         {rst && <Marker position={rst} icon={rstIcon} />}
 
